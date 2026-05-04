@@ -33,8 +33,20 @@ def patch_member_check(monkeypatch):
     monkeypatch.setattr(perm.discord, "Member", SimpleNamespace, raising=False)
 
 
-async def test_default_everyone(db):
-    interaction = _interaction()
+async def test_default_owner_only(db):
+    """既定はオーナーのみ。"""
+    # オーナーは OK
+    interaction = _interaction(owner_id=1, user_id=1)
+    assert await is_allowed(db, interaction, "list") is True
+    # 一般ユーザーは拒否
+    interaction = _interaction(owner_id=1, user_id=2)
+    with pytest.raises(PermissionDenied):
+        await is_allowed(db, interaction, "list")
+
+
+async def test_explicit_everyone(db):
+    await db.set_permission(1, "list", "everyone")
+    interaction = _interaction(owner_id=1, user_id=2)
     assert await is_allowed(db, interaction, "list") is True
 
 

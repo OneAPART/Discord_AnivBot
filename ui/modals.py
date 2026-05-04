@@ -8,9 +8,19 @@ from utils.validators import normalize_twitter, parse_md, parse_ymd, twitter_url
 
 
 class ProfileModal(discord.ui.Modal, title="プロフィール登録 / 更新"):
-    def __init__(self, db: Database, existing: UserProfile | None):
+    def __init__(
+        self,
+        db: Database,
+        existing: UserProfile | None,
+        target_user_id: int | None = None,
+        target_display: str | None = None,
+    ):
+        """target_user_id を与えると、そのユーザーを対象に保存する。未指定はコマンド実行者。"""
         super().__init__(timeout=600)
         self.db = db
+        self.target_user_id = target_user_id
+        if target_display:
+            self.title = f"プロフィール登録 / 更新: {target_display}"
 
         self.name_input = discord.ui.TextInput(
             label="表示名",
@@ -73,9 +83,10 @@ class ProfileModal(discord.ui.Modal, title="プロフィール登録 / 更新"):
             )
             return
 
+        target_uid = self.target_user_id or interaction.user.id
         profile = UserProfile(
             guild_id=interaction.guild.id,
-            user_id=interaction.user.id,
+            user_id=target_uid,
             name=self.name_input.value.strip(),
             twitter_id=twitter,
             birth_month=b_month,
@@ -85,9 +96,11 @@ class ProfileModal(discord.ui.Modal, title="プロフィール登録 / 更新"):
             start_day=s_day,
         )
         await self.db.upsert_profile(profile)
-        await interaction.response.send_message(
-            ":white_check_mark: このサーバー用にプロフィールを保存しました！", ephemeral=True
-        )
+        if self.target_user_id and self.target_user_id != interaction.user.id:
+            msg = f":white_check_mark: <@{target_uid}> のプロフィールをこのサーバー用に保存しました。"
+        else:
+            msg = ":white_check_mark: このサーバー用にプロフィールを保存しました！"
+        await interaction.response.send_message(msg, ephemeral=True)
 
     async def on_error(
         self, interaction: discord.Interaction, error: Exception

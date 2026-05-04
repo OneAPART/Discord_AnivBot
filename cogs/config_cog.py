@@ -184,7 +184,7 @@ class ConfigCog(commands.Cog):
         for cmd in MANAGED_COMMANDS:
             p = perm_map.get(cmd)
             if p is None:
-                lines.append(f"`/{cmd}` → **everyone** (既定)")
+                lines.append(f"`/{cmd}` → **owner** (既定)")
                 continue
             if p.mode == "role":
                 roles = (

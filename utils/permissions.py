@@ -36,7 +36,7 @@ async def is_allowed(
         raise PermissionDenied("このコマンドはサーバー内で実行してください。")
 
     perm = await db.get_permission(interaction.guild.id, command_name)
-    mode = perm.mode if perm else "everyone"
+    mode = perm.mode if perm else "owner"  # 既定: オーナーのみ
 
     if mode == "everyone":
         return True

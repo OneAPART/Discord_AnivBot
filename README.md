@@ -9,8 +9,8 @@ Discord ユーザーの **誕生日** と **活動記念日** を、毎日 JST 0
 
 | 機能 | コマンド | 説明 |
 |------|---------|------|
-| プロフィール登録 / 編集 | `/profile` | Modal フォームで一括入力。既存値はプリフィルされます。**サーバーごとに独立して保持** されます。 |
-| プロフィール削除 | `/profile_delete` | このサーバーから自分のプロフィールを削除します。 |
+| プロフィール登録 / 編集 | `/profile [user]` | Modal フォームで一括入力。`user` を指定すると他ユーザーを代理登録できます（要オーナー権限・既定）。既存値はプリフィルされます。**サーバーごとに独立して保持** されます。 |
+| プロフィール削除 | `/profile_delete [user]` | このサーバーからプロフィールを削除します。 |
 | プロフィール表示 | `/show [user]` | 自分または指定ユーザーの情報を Embed 表示。Twitter ボタン付き。 |
 | プロフィール一覧 | `/list [sort]` | 当サーバー所属の登録ユーザー一覧。`name` / `birthday` / `anniversary` で並び替え可、ページャ付き。 |
 | 通知チャンネル設定 | `/config channel <channel>` | お祝い投稿先をサーバーごとに設定（要 `サーバー管理` 権限）。 |
@@ -165,17 +165,19 @@ python main.py
 
 | モード | 意味 |
 |--------|------|
-| `owner` | サーバーオーナーのみ実行可 |
-| `everyone` | 全員実行可（既定） |
+| `owner` | サーバーオーナーのみ実行可（**既定**） |
+| `everyone` | 全員実行可 |
 | `role` | 指定ロール（最大3つ）のいずれかを保持しているメンバーのみ実行可 |
 
 例:
 
 ```
 /config permission command:list mode:role role1:@運営
-/config permission command:profile mode:everyone
+/config permission command:profile mode:everyone   # 全員に自分のプロフィール登録を許可
 /config permission command:show mode:owner
 ```
+
+> 💡 **既定はオーナーのみ** です。一般メンバーに `/profile` `/show` `/list` を使わせたい場合は上記のように `everyone` または `role` を明示的に設定してください。
 
 現在の設定確認:
 

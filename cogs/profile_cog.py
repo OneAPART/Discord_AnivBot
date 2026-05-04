@@ -25,28 +25,53 @@ class ProfileCog(commands.Cog):
     # /profile
     # ----------------------------------------------------------
     @app_commands.command(name="profile", description="プロフィールを登録 / 編集します (サーバーごと)。")
+    @app_commands.describe(user="代理登録する対象ユーザー (省略時は自分)")
     @app_commands.guild_only()
     @require("profile")
-    async def profile(self, interaction: discord.Interaction):
+    async def profile(
+        self,
+        interaction: discord.Interaction,
+        user: discord.Member | None = None,
+    ):
         assert interaction.guild is not None
-        existing = await self.db.get_profile(interaction.guild.id, interaction.user.id)
-        await interaction.response.send_modal(ProfileModal(self.db, existing))
+        target = user or interaction.user
+        if target.bot:
+            await interaction.response.send_message(
+                ":x: Bot のプロフィールは登録できません。", ephemeral=True
+            )
+            return
+        existing = await self.db.get_profile(interaction.guild.id, target.id)
+        await interaction.response.send_modal(
+            ProfileModal(
+                self.db,
+                existing,
+                target_user_id=target.id,
+                target_display=target.display_name,
+            )
+        )
 
     @app_commands.command(
         name="profile_delete",
-        description="このサーバーから自分のプロフィールを削除します。",
+        description="このサーバーからプロフィールを削除します。",
     )
+    @app_commands.describe(user="削除対象ユーザー (省略時は自分)")
     @app_commands.guild_only()
     @require("profile")
-    async def profile_delete(self, interaction: discord.Interaction):
+    async def profile_delete(
+        self,
+        interaction: discord.Interaction,
+        user: discord.Member | None = None,
+    ):
         assert interaction.guild is not None
-        deleted = await self.db.delete_profile(
-            interaction.guild.id, interaction.user.id
-        )
+        target = user or interaction.user
+        deleted = await self.db.delete_profile(interaction.guild.id, target.id)
         if deleted:
-            msg = ":wastebasket: このサーバーのプロフィールを削除しました。"
+            if user is None:
+                msg = ":wastebasket: このサーバーのプロフィールを削除しました。"
+            else:
+                msg = f":wastebasket: <@{target.id}> のプロフィールを削除しました。"
         else:
-            msg = ":information_source: このサーバーには登録がありませんでした。"
+            msg = ":information_source: 該当するプロフィールはありませんでした。"
         await interaction.response.send_message(msg, ephemeral=True)
 
     # ----------------------------------------------------------
