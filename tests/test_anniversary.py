@@ -1,8 +1,4 @@
-"""通知の集計ロジックを Discord 抜きで検証する。
-
-`_send_to_channel` をモックに置き換えて、対象抽出と
-配信回数だけを検証する。
-"""
+"""通知集計ロジックのテスト（Discord 部分はモック）。"""
 from datetime import date
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -20,9 +16,9 @@ async def db(tmp_path):
     return d
 
 
-def _profile(uid, **kw):
+def _profile(guild_id, user_id, **kw):
     base = dict(
-        user_id=uid, name=f"u{uid}", twitter_id=None,
+        guild_id=guild_id, user_id=user_id, name=f"u{user_id}", twitter_id=None,
         birth_month=4, birth_day=15,
         start_year=2020, start_month=4, start_day=15,
     )
@@ -31,56 +27,52 @@ def _profile(uid, **kw):
 
 
 def _make_cog(db):
-    """tasks.loop の自動起動を避けるため、__init__ をスキップして手で組み立てる。"""
     cog = AnniversaryCog.__new__(AnniversaryCog)
     cog.bot = SimpleNamespace()
     cog.db = db
-    cog._send_to_channel = AsyncMock()  # type: ignore[attr-defined]
+    cog._send_to_channel = AsyncMock()
     return cog
 
 
-async def test_run_for_date_no_target(db):
+async def test_no_channels(db):
     cog = _make_cog(db)
-    result = await cog.run_for_date(date(2026, 1, 1))
+    result = await cog.run_for_date(date(2026, 5, 5))
     assert result == {"birthdays": 0, "anniversaries": 0, "channels": 0}
-    cog._send_to_channel.assert_not_called()
 
 
-async def test_run_for_date_hits(db):
-    await db.upsert_profile(_profile(1, birth_month=5, birth_day=5))
-    await db.upsert_profile(_profile(2, start_year=2020, start_month=5, start_day=5))
-    await db.set_channel(100, 999)
-    await db.set_channel(101, 998)
+async def test_only_matching_guild_is_notified(db):
+    """guild=1 にだけ対象がいる -> guild=2 のチャンネルには通知が飛ばない。"""
+    await db.upsert_profile(_profile(1, 10, birth_month=5, birth_day=5))
+    await db.upsert_profile(_profile(2, 20, birth_month=12, birth_day=31))
+    await db.set_channel(1, 100)
+    await db.set_channel(2, 200)
 
     cog = _make_cog(db)
     result = await cog.run_for_date(date(2026, 5, 5))
     assert result["birthdays"] == 1
-    assert result["anniversaries"] == 1
-    assert result["channels"] == 2
-    # 2 チャンネル分呼ばれる
-    assert cog._send_to_channel.await_count == 2
-    # notify_absent が kwargs で渡されている (既定 False)
-    kwargs = cog._send_to_channel.await_args.kwargs
-    assert kwargs.get("notify_absent") is False
+    assert result["anniversaries"] == 0
+    assert result["channels"] == 1
+    cog._send_to_channel.assert_awaited_once()
+    args = cog._send_to_channel.await_args.args
+    assert args[0] == 1  # guild_id
 
 
-async def test_anniversary_year_calc(db):
-    """current_year - start_year が引数として正しく流れるか"""
-    await db.upsert_profile(_profile(1, start_year=2018, start_month=5, start_day=5,
-                                     birth_month=1, birth_day=1))  # 5/5 は誕生日にヒットしない
-    await db.set_channel(1, 1)
+async def test_isolated_per_guild(db):
+    """同一ユーザー ID が複数ギルドに登録されていても、それぞれのギルドにのみ通知。"""
+    await db.upsert_profile(_profile(1, 10, birth_month=5, birth_day=5))
+    await db.upsert_profile(_profile(2, 10, birth_month=5, birth_day=5))
+    await db.set_channel(1, 100)
+    await db.set_channel(2, 200)
 
     cog = _make_cog(db)
     result = await cog.run_for_date(date(2026, 5, 5))
-    assert result["anniversaries"] == 1
-    # 第3引数 (current_year) を確認
-    args = cog._send_to_channel.await_args.args
-    assert args[2] == 2026
+    assert result["birthdays"] == 2
+    assert result["channels"] == 2
+    assert cog._send_to_channel.await_count == 2
 
 
 async def test_notify_absent_passed_through(db):
-    """DB の notify_absent 設定が send_to_channel に伝わること"""
-    await db.upsert_profile(_profile(1, birth_month=5, birth_day=5))
+    await db.upsert_profile(_profile(10, 1, birth_month=5, birth_day=5))
     await db.set_channel(10, 100)
     await db.set_notify_absent(10, True)
 
@@ -88,3 +80,14 @@ async def test_notify_absent_passed_through(db):
     await cog.run_for_date(date(2026, 5, 5))
     kwargs = cog._send_to_channel.await_args.kwargs
     assert kwargs.get("notify_absent") is True
+
+
+async def test_anniversary_year_calc(db):
+    await db.upsert_profile(_profile(1, 1, start_year=2018, start_month=5, start_day=5,
+                                     birth_month=1, birth_day=1))
+    await db.set_channel(1, 1)
+    cog = _make_cog(db)
+    result = await cog.run_for_date(date(2026, 5, 5))
+    assert result["anniversaries"] == 1
+    args = cog._send_to_channel.await_args.args
+    assert args[2] == 2026  # current_year

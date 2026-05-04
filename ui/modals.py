@@ -58,6 +58,11 @@ class ProfileModal(discord.ui.Modal, title="プロフィール登録 / 更新"):
         self.add_item(self.start_input)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        if interaction.guild is None:
+            await interaction.response.send_message(
+                ":x: サーバー内で実行してください。", ephemeral=True
+            )
+            return
         try:
             twitter = normalize_twitter(self.twitter_input.value)
             b_month, b_day = parse_md(self.birthday_input.value)
@@ -69,6 +74,7 @@ class ProfileModal(discord.ui.Modal, title="プロフィール登録 / 更新"):
             return
 
         profile = UserProfile(
+            guild_id=interaction.guild.id,
             user_id=interaction.user.id,
             name=self.name_input.value.strip(),
             twitter_id=twitter,
@@ -80,7 +86,7 @@ class ProfileModal(discord.ui.Modal, title="プロフィール登録 / 更新"):
         )
         await self.db.upsert_profile(profile)
         await interaction.response.send_message(
-            ":white_check_mark: プロフィールを保存しました！", ephemeral=True
+            ":white_check_mark: このサーバー用にプロフィールを保存しました！", ephemeral=True
         )
 
     async def on_error(

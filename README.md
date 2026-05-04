@@ -9,7 +9,8 @@ Discord ユーザーの **誕生日** と **活動記念日** を、毎日 JST 0
 
 | 機能 | コマンド | 説明 |
 |------|---------|------|
-| プロフィール登録 / 編集 | `/profile` | Modal フォームで一括入力。既存値はプリフィルされます。 |
+| プロフィール登録 / 編集 | `/profile` | Modal フォームで一括入力。既存値はプリフィルされます。**サーバーごとに独立して保持** されます。 |
+| プロフィール削除 | `/profile_delete` | このサーバーから自分のプロフィールを削除します。 |
 | プロフィール表示 | `/show [user]` | 自分または指定ユーザーの情報を Embed 表示。Twitter ボタン付き。 |
 | プロフィール一覧 | `/list [sort]` | 当サーバー所属の登録ユーザー一覧。`name` / `birthday` / `anniversary` で並び替え可、ページャ付き。 |
 | 通知チャンネル設定 | `/config channel <channel>` | お祝い投稿先をサーバーごとに設定（要 `サーバー管理` 権限）。 |
@@ -212,14 +213,19 @@ SQLite ファイル（既定: `anniversary.db`）にすべて保存されます�
 
 ### `user_profiles`
 
+プロフィールはサーバー単位で管理されます。同一ユーザーでもサーバーが違えば別レコードです。
+
 | カラム | 型 | 備考 |
 |--------|----|------|
-| `user_id` | INTEGER | PRIMARY KEY (Discord User ID) |
+| `guild_id` | INTEGER | 複合主キー (Discord Guild ID) |
+| `user_id` | INTEGER | 複合主キー (Discord User ID) |
 | `name` | TEXT | 表示名 |
 | `twitter_id` | TEXT | `@handle` 形式 |
 | `birth_month` / `birth_day` | INTEGER | 誕生月日 |
 | `start_year` / `start_month` / `start_day` | INTEGER | 活動開始日 |
 | `updated_at` | TIMESTAMP | 自動更新 |
+
+> ⚠️ **旧バージョンからアップグレードした場合**: 旧スキーマの `user_profiles` は起動時に自動的に `_legacy_user_profiles` にリネームされ、退避されます。所属サーバーが特定できないため自動移行はされません。各サーバーで `/profile` を再登録するか、必要なら `_legacy_user_profiles` から手動で SQL でコピーしてください。
 
 ### `server_settings`
 

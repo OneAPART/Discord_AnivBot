@@ -78,10 +78,15 @@ class AdminCog(commands.Cog):
             return
 
         if dry_run:
-            bdays = await self.db.find_birthdays(target.month, target.day)
-            anns = await self.db.find_anniversaries(target.month, target.day)
+            assert interaction.guild is not None
+            bdays = await self.db.find_birthdays(
+                interaction.guild.id, target.month, target.day
+            )
+            anns = await self.db.find_anniversaries(
+                interaction.guild.id, target.month, target.day
+            )
             await interaction.followup.send(
-                f"🧪 dry-run: {target}\n"
+                f"🧪 dry-run (このサーバーのみ): {target}\n"
                 f"- 誕生日対象: {len(bdays)} 名 ({', '.join(p.name for p in bdays) or 'なし'})\n"
                 f"- 記念日対象: {len(anns)} 名 ({', '.join(p.name for p in anns) or 'なし'})",
                 ephemeral=True,

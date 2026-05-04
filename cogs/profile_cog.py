@@ -24,12 +24,30 @@ class ProfileCog(commands.Cog):
     # ----------------------------------------------------------
     # /profile
     # ----------------------------------------------------------
-    @app_commands.command(name="profile", description="プロフィールを登録 / 編集します。")
+    @app_commands.command(name="profile", description="プロフィールを登録 / 編集します (サーバーごと)。")
     @app_commands.guild_only()
     @require("profile")
     async def profile(self, interaction: discord.Interaction):
-        existing = await self.db.get_profile(interaction.user.id)
+        assert interaction.guild is not None
+        existing = await self.db.get_profile(interaction.guild.id, interaction.user.id)
         await interaction.response.send_modal(ProfileModal(self.db, existing))
+
+    @app_commands.command(
+        name="profile_delete",
+        description="このサーバーから自分のプロフィールを削除します。",
+    )
+    @app_commands.guild_only()
+    @require("profile")
+    async def profile_delete(self, interaction: discord.Interaction):
+        assert interaction.guild is not None
+        deleted = await self.db.delete_profile(
+            interaction.guild.id, interaction.user.id
+        )
+        if deleted:
+            msg = ":wastebasket: このサーバーのプロフィールを削除しました。"
+        else:
+            msg = ":information_source: このサーバーには登録がありませんでした。"
+        await interaction.response.send_message(msg, ephemeral=True)
 
     # ----------------------------------------------------------
     # /show
@@ -43,11 +61,12 @@ class ProfileCog(commands.Cog):
         interaction: discord.Interaction,
         user: discord.User | None = None,
     ):
+        assert interaction.guild is not None
         target = user or interaction.user
-        profile = await self.db.get_profile(target.id)
+        profile = await self.db.get_profile(interaction.guild.id, target.id)
         if profile is None:
             await interaction.response.send_message(
-                f"{target.display_name} さんはまだプロフィール未登録です。",
+                f"{target.display_name} さんはこのサーバーでまだプロフィール未登録です。",
                 ephemeral=True,
             )
             return
@@ -99,7 +118,7 @@ class ProfileCog(commands.Cog):
         assert guild is not None
 
         member_ids = [m.id for m in guild.members if not m.bot]
-        profiles = await self.db.list_profiles(user_ids=member_ids)
+        profiles = await self.db.list_profiles(guild.id, user_ids=member_ids)
 
         if not profiles:
             await interaction.response.send_message(

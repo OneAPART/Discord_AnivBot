@@ -37,23 +37,40 @@ class AnniversaryCog(commands.Cog):
     async def run_for_date(self, target_date) -> dict:
         """指定日付について通知ロジックを実行する。テスト・手動再実行用。
 
+        サーバーごとに DB を引き、対象がいるサーバーのみ通知する。
+
         Returns:
             集計結果 {'birthdays': int, 'anniversaries': int, 'channels': int}
         """
         log.info("Notify run for: %s", target_date.isoformat())
         try:
-            birthdays = await self.db.find_birthdays(target_date.month, target_date.day)
-            anniversaries = await self.db.find_anniversaries(target_date.month, target_date.day)
+            channels = await self.db.all_channels()
         except Exception:
             log.exception("DB 取得に失敗しました")
             return {"birthdays": 0, "anniversaries": 0, "channels": 0}
 
-        if not birthdays and not anniversaries:
-            log.info("対象なし: %s", target_date.isoformat())
-            return {"birthdays": 0, "anniversaries": 0, "channels": 0}
+        total_b = 0
+        total_a = 0
+        notified_channels = 0
 
-        channels = await self.db.all_channels()
         for guild_id, channel_id, notify_absent in channels:
+            try:
+                birthdays = await self.db.find_birthdays(
+                    guild_id, target_date.month, target_date.day
+                )
+                anniversaries = await self.db.find_anniversaries(
+                    guild_id, target_date.month, target_date.day
+                )
+            except Exception:
+                log.exception("DB 検索失敗 guild=%s", guild_id)
+                continue
+
+            if not birthdays and not anniversaries:
+                continue
+
+            total_b += len(birthdays)
+            total_a += len(anniversaries)
+            notified_channels += 1
             await self._send_to_channel(
                 guild_id,
                 channel_id,
@@ -62,10 +79,11 @@ class AnniversaryCog(commands.Cog):
                 anniversaries,
                 notify_absent=notify_absent,
             )
+
         return {
-            "birthdays": len(birthdays),
-            "anniversaries": len(anniversaries),
-            "channels": len(channels),
+            "birthdays": total_b,
+            "anniversaries": total_a,
+            "channels": notified_channels,
         }
 
     @daily_notify.before_loop
