@@ -12,6 +12,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 from db.database import Database
+from utils.error_notifier import ErrorNotifier
 from utils.permissions import PermissionDenied
 
 load_dotenv()
@@ -26,6 +27,17 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 TEST_GUILD_ID = os.getenv("TEST_GUILD_ID")
 DB_PATH = os.getenv("DB_PATH", "anniversary.db")
 
+# エラー通知先 (Power Automate トリガー)。
+# .env の ERROR_WEBHOOK_URL があればそちらを優先、未設定ならハードコードの URL を使用する。
+_DEFAULT_ERROR_WEBHOOK_URL = (
+    "https://2226eed15edeee65b4b052511edb35.b5.environment.api.powerplatform.com:443"
+    "/powerautomate/automations/direct/workflows/413fd917d9d4432b866c972b9e6baba4"
+    "/triggers/manual/paths/invoke"
+    "?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0"
+    "&sig=FRa0StTGJztvKMYl4SJ5JhmD-ByqUUptwe13r3OfNjY"
+)
+ERROR_WEBHOOK_URL = os.getenv("ERROR_WEBHOOK_URL") or _DEFAULT_ERROR_WEBHOOK_URL
+
 INITIAL_COGS = (
     "cogs.profile_cog",
     "cogs.config_cog",
@@ -34,12 +46,39 @@ INITIAL_COGS = (
 )
 
 
+class _NotifyingLogHandler(logging.Handler):
+    """ERROR 以上のログを ErrorNotifier 経由で外部 Webhook へ転送する。"""
+
+    def __init__(self, notifier: ErrorNotifier):
+        super().__init__(level=logging.ERROR)
+        self.notifier = notifier
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if not self.notifier.enabled:
+            return
+        # 通知ハンドラ自体のログ (utils.error_notifier) でループしないようにガード
+        if record.name.startswith("utils.error_notifier"):
+            return
+        exc = record.exc_info[1] if record.exc_info else None
+        try:
+            self.notifier.notify(
+                level=record.levelname,
+                message=record.getMessage(),
+                exception=exc,
+                logger_name=record.name,
+                context={"module": record.module, "func": record.funcName},
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+
 class AnniversaryBot(commands.Bot):
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, notifier: ErrorNotifier):
         intents = discord.Intents.default()
         intents.members = True  # ギルドメンバー判定で使用
         super().__init__(command_prefix="!", intents=intents)
         self.db = db
+        self.notifier = notifier
 
     async def setup_hook(self) -> None:
         for ext in INITIAL_COGS:
@@ -72,6 +111,21 @@ class AnniversaryBot(commands.Bot):
             msg = ":no_entry: このコマンドを実行する権限がありません。"
         else:
             log.exception("Unhandled app command error: %s", error)
+            # 外部 Webhook へ通知（コンテキスト付き）
+            self.notifier.notify(
+                level="ERROR",
+                message=f"Unhandled app command error: {type(error).__name__}",
+                exception=error,
+                logger_name="anniversarybot",
+                context={
+                    "guild_id": interaction.guild.id if interaction.guild else None,
+                    "channel_id": interaction.channel.id if interaction.channel else None,
+                    "user_id": interaction.user.id,
+                    "command": interaction.command.qualified_name
+                    if interaction.command
+                    else None,
+                },
+            )
             msg = f":x: コマンド実行中にエラーが発生しました: `{type(error).__name__}`"
 
         try:
@@ -92,9 +146,20 @@ async def main() -> None:
     await db.init()
     log.info("DB initialized: %s", DB_PATH)
 
-    bot = AnniversaryBot(db)
-    async with bot:
-        await bot.start(TOKEN)
+    notifier = ErrorNotifier(ERROR_WEBHOOK_URL)
+    await notifier.start()
+    if notifier.enabled:
+        logging.getLogger().addHandler(_NotifyingLogHandler(notifier))
+        log.info("Error webhook enabled")
+    else:
+        log.info("Error webhook disabled (ERROR_WEBHOOK_URL unset)")
+
+    bot = AnniversaryBot(db, notifier)
+    try:
+        async with bot:
+            await bot.start(TOKEN)
+    finally:
+        await notifier.close()
 
 
 if __name__ == "__main__":

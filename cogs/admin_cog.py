@@ -120,6 +120,65 @@ class AdminCog(commands.Cog):
             ephemeral=True,
         )
 
+    @admin.command(
+        name="sync",
+        description="このサーバーへスラッシュコマンドを即時同期します（オーナー専用）。",
+    )
+    @app_commands.describe(
+        scope="`guild`=このサーバーへ即時同期 / `global`=全サーバーへ反映（最大1時間）",
+        clear="True にすると同期前にこのサーバー登録コマンドを一旦クリア（`scope=guild` のみ有効）。",
+    )
+    async def sync_cmd(
+        self,
+        interaction: discord.Interaction,
+        scope: str = "guild",
+        clear: bool = False,
+    ):
+        if interaction.guild is None:
+            await interaction.response.send_message(
+                "サーバー内で実行してください。", ephemeral=True
+            )
+            return
+        if interaction.user.id != interaction.guild.owner_id:
+            await interaction.response.send_message(
+                ":no_entry: このコマンドはサーバーオーナーのみ実行できます。",
+                ephemeral=True,
+            )
+            return
+        if scope not in ("guild", "global"):
+            await interaction.response.send_message(
+                ":x: scope は `guild` か `global` を指定してください。",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        try:
+            if scope == "global":
+                synced = await self.bot.tree.sync()
+                await interaction.followup.send(
+                    f":white_check_mark: グローバル同期完了: {len(synced)} 件\n"
+                    "（各クライアントへの反映に最大1時間かかります）",
+                    ephemeral=True,
+                )
+                return
+
+            guild_obj = discord.Object(id=interaction.guild.id)
+            if clear:
+                self.bot.tree.clear_commands(guild=guild_obj)
+                await self.bot.tree.sync(guild=guild_obj)
+            self.bot.tree.copy_global_to(guild=guild_obj)
+            synced = await self.bot.tree.sync(guild=guild_obj)
+            await interaction.followup.send(
+                f":white_check_mark: このサーバーへ同期完了: {len(synced)} 件\n"
+                "（即時反映されます。表示が古い場合は Discord クライアントを再起動してください）",
+                ephemeral=True,
+            )
+        except discord.HTTPException as e:
+            await interaction.followup.send(
+                f":x: 同期に失敗しました: {e}", ephemeral=True
+            )
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(AdminCog(bot, bot.db))  # type: ignore[attr-defined]
