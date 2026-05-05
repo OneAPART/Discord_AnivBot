@@ -15,6 +15,7 @@ Discord ユーザーの **誕生日** と **活動記念日** を、毎日 JST 0
 | プロフィール一覧 | `/list [sort] [public]` | 当サーバー所属の登録ユーザー一覧。`name` / `birthday` / `anniversary` で並び替え可、ページャー付き。既定では自分にしか見えません (ephemeral)。`public:True` でチャンネル公開表示。 |
 | 通知チャンネル設定 | `/config channel <channel>` | お祝い投稿先をサーバーごとに設定（要 `サーバー管理` 権限）。 |
 | 不在ユーザー通知設定 | `/config absent <true\|false>` | サーバーに不在のユーザーを通知するか切り替え。既定は `false`（在籍者のみ通知）。 |
+| アバター取得元設定 | `/config avatar <twitter\|discord>` | 通知カード右上に表示するアバターをどちらを優先して取得するか設定。既定は `twitter`。未登録 / 取得不能時はもう一方へフォールバック。 |
 | 権限設定 | `/config permission <command> <mode> [role1..3]` | コマンド実行権限を `owner` / `everyone` / `role` から選択（要 `サーバー管理` 権限）。 |
 | 設定確認 | `/config show` | 通知チャンネルとコマンド権限の現状を一覧表示。 |
 | 自動通知 | （自動） | 毎日 **JST 00:00** に誕生日・活動記念日を投稿。記念日は「○周年」を自動計算。 |
@@ -216,6 +217,17 @@ python main.py
 
 メンションされた本人へ Embed と（登録されていれば）Twitter ボタンが届きます。誕生日 / 活動開始日が未登録のユーザーはそもそも通知対象になりません（「準備中」用途に便利）。
 
+#### カード右上のアバター表示
+
+通知カードの右上 (Embed thumbnail) にアバター画像を表示します。`/config avatar` で取得元を切り替えられます。
+
+| 設定 | 動作 |
+|------|------|
+| `twitter`（既定） | X(Twitter) アバターを優先。Twitter ID 未登録のときは Discord アバターにフォールバック。 |
+| `discord` | Discord アバターを優先。サーバーに本人が不在などで取得できないときは X アバターにフォールバック。 |
+
+> X アバターの取得には [unavatar.io](https://unavatar.io/) を使用しています (`https://unavatar.io/x/<handle>`)。API キー不要で、取得できない場合は unavatar.io 側のフォールバック画像が表示されます。
+
 ---
 
 ## 🗄 データベース
@@ -245,6 +257,7 @@ SQLite ファイル（既定: `anniversary.db`）にすべて保存されます�
 | `guild_id` | INTEGER | PRIMARY KEY |
 | `channel_id` | INTEGER | 通知投稿チャンネル |
 | `notify_absent` | INTEGER | 0=不在ユーザーを通知しない (既定) / 1=通知する |
+| `avatar_source` | TEXT | `twitter` (既定) / `discord`。通知カードアバターの優先取得元 |
 | `updated_at` | TIMESTAMP | 自動更新 |
 
 ### `command_permissions`

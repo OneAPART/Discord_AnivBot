@@ -147,6 +147,38 @@ class ConfigCog(commands.Cog):
         await interaction.response.send_message(msg, ephemeral=True)
 
     # ----------------------------------------------------------
+    # /config avatar
+    # ----------------------------------------------------------
+    @config.command(
+        name="avatar",
+        description="通知カード右側に表示するアバターの取得元を設定します。",
+    )
+    @app_commands.describe(
+        source="twitter: X を優先 / discord: Discord アバターを優先"
+    )
+    async def set_avatar(
+        self,
+        interaction: discord.Interaction,
+        source: Literal["twitter", "discord"],
+    ):
+        if interaction.guild is None:
+            await interaction.response.send_message(
+                "このコマンドはサーバー内で実行してください。", ephemeral=True
+            )
+            return
+        try:
+            await self.db.set_avatar_source(interaction.guild.id, source)
+        except LookupError as e:
+            await interaction.response.send_message(f":x: {e}", ephemeral=True)
+            return
+        label = "X (Twitter) を優先" if source == "twitter" else "Discord アバターを優先"
+        await interaction.response.send_message(
+            f":white_check_mark: アバター表示を **{label}** に設定しました。\n"
+            f" (未登録 / 取得不能時はもう一方にフォールバックします)",
+            ephemeral=True,
+        )
+
+    # ----------------------------------------------------------
     # /config show
     # ----------------------------------------------------------
     @config.command(
@@ -162,6 +194,7 @@ class ConfigCog(commands.Cog):
 
         channel_id = await self.db.get_channel(interaction.guild.id)
         notify_absent = await self.db.get_notify_absent(interaction.guild.id)
+        avatar_source = await self.db.get_avatar_source(interaction.guild.id)
         perms = await self.db.list_permissions(interaction.guild.id)
         perm_map = {p.command_name: p for p in perms}
 
@@ -177,6 +210,15 @@ class ConfigCog(commands.Cog):
         embed.add_field(
             name="不在ユーザーへの通知",
             value=("有効 (全員に通知)" if notify_absent else "無効 (サーバー在籍者のみ)"),
+            inline=False,
+        )
+        embed.add_field(
+            name="アバター取得元",
+            value=(
+                "X (Twitter) を優先"
+                if avatar_source == "twitter"
+                else "Discord アバターを優先"
+            ),
             inline=False,
         )
 

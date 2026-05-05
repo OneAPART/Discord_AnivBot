@@ -82,7 +82,20 @@ async def test_list_profiles_per_guild(db):
 async def test_set_get_channel(db):
     await db.set_channel(100, 200)
     assert await db.get_channel(100) == 200
-    assert await db.all_channels() == [(100, 200, False)]
+    assert await db.all_channels() == [(100, 200, False, "twitter")]
+
+
+async def test_avatar_source(db):
+    # channel 未設定なら LookupError
+    with pytest.raises(LookupError):
+        await db.set_avatar_source(1, "discord")
+    await db.set_channel(1, 2)
+    assert await db.get_avatar_source(1) == "twitter"  # 既定
+    await db.set_avatar_source(1, "discord")
+    assert await db.get_avatar_source(1) == "discord"
+    assert await db.all_channels() == [(1, 2, False, "discord")]
+    with pytest.raises(ValueError):
+        await db.set_avatar_source(1, "invalid")
 
 
 async def test_notify_absent(db):

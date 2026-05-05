@@ -9,6 +9,7 @@ from discord.ext import commands, tasks
 
 from db.database import Database, UserProfile
 from ui.modals import TwitterLinkView
+from utils.avatar import resolve_avatar_url
 from utils.validators import twitter_url
 
 JST = timezone(timedelta(hours=9))
@@ -53,7 +54,7 @@ class AnniversaryCog(commands.Cog):
         total_a = 0
         notified_channels = 0
 
-        for guild_id, channel_id, notify_absent in channels:
+        for guild_id, channel_id, notify_absent, avatar_source in channels:
             try:
                 birthdays = await self.db.find_birthdays(
                     guild_id, target_date.month, target_date.day
@@ -78,6 +79,7 @@ class AnniversaryCog(commands.Cog):
                 birthdays,
                 anniversaries,
                 notify_absent=notify_absent,
+                avatar_source=avatar_source,
             )
 
         return {
@@ -105,6 +107,7 @@ class AnniversaryCog(commands.Cog):
         birthdays: list[UserProfile],
         anniversaries: list[UserProfile],
         notify_absent: bool = False,
+        avatar_source: str = "twitter",
     ) -> None:
         channel = self.bot.get_channel(channel_id)
         if channel is None:
@@ -147,7 +150,10 @@ class AnniversaryCog(commands.Cog):
                     guild_id, p.user_id,
                 )
                 continue
-            await self._safe_send(channel, *self._birthday_payload(p))
+            member = guild.get_member(p.user_id) if guild else None
+            await self._safe_send(
+                channel, *self._birthday_payload(p, member, avatar_source)
+            )
 
         for p in anniversaries:
             if not _allowed(p.user_id):
@@ -156,8 +162,10 @@ class AnniversaryCog(commands.Cog):
                     guild_id, p.user_id,
                 )
                 continue
+            member = guild.get_member(p.user_id) if guild else None
             await self._safe_send(
-                channel, *self._anniversary_payload(p, current_year)
+                channel,
+                *self._anniversary_payload(p, current_year, member, avatar_source),
             )
 
     async def _safe_send(
@@ -178,13 +186,21 @@ class AnniversaryCog(commands.Cog):
     # Payload builders
     # --------------------------------------------------------------
     def _birthday_payload(
-        self, p: UserProfile
+        self,
+        p: UserProfile,
+        member: discord.abc.User | None = None,
+        avatar_source: str = "twitter",
     ) -> tuple[str, discord.Embed, discord.ui.View | None]:
         embed = discord.Embed(
             title="🎂 Happy Birthday! 🎂",
             description=f"**{p.name}** さん、お誕生日おめでとうございます！🎉",
             color=discord.Color.magenta(),
         )
+        avatar = resolve_avatar_url(
+            source=avatar_source, twitter_id=p.twitter_id, member=member
+        )
+        if avatar:
+            embed.set_thumbnail(url=avatar)
         if p.twitter_id:
             embed.add_field(
                 name="Twitter",
@@ -194,7 +210,11 @@ class AnniversaryCog(commands.Cog):
         return (f"<@{p.user_id}>", embed, view)
 
     def _anniversary_payload(
-        self, p: UserProfile, current_year: int
+        self,
+        p: UserProfile,
+        current_year: int,
+        member: discord.abc.User | None = None,
+        avatar_source: str = "twitter",
     ) -> tuple[str, discord.Embed, discord.ui.View | None]:
         years = current_year - (p.start_year or current_year)
         embed = discord.Embed(
@@ -205,6 +225,11 @@ class AnniversaryCog(commands.Cog):
             ),
             color=discord.Color.gold(),
         )
+        avatar = resolve_avatar_url(
+            source=avatar_source, twitter_id=p.twitter_id, member=member
+        )
+        if avatar:
+            embed.set_thumbnail(url=avatar)
         if p.twitter_id:
             embed.add_field(
                 name="Twitter",

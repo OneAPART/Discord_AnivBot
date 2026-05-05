@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS server_settings (
     guild_id      INTEGER PRIMARY KEY,
     channel_id    INTEGER NOT NULL,
     notify_absent INTEGER NOT NULL DEFAULT 0,
+    avatar_source TEXT    NOT NULL DEFAULT 'twitter',
     updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -115,12 +116,16 @@ class Database:
         )
 
     async def _migrate_columns(self, db: aiosqlite.Connection) -> None:
-        """server_settings に notify_absent が無い場合に追加する。"""
+        """server_settings に不足しているカラムを追加する。"""
         async with db.execute("PRAGMA table_info(server_settings)") as cur:
             cols = {row[1] for row in await cur.fetchall()}
         if "notify_absent" not in cols:
             await db.execute(
                 "ALTER TABLE server_settings ADD COLUMN notify_absent INTEGER NOT NULL DEFAULT 0"
+            )
+        if "avatar_source" not in cols:
+            await db.execute(
+                "ALTER TABLE server_settings ADD COLUMN avatar_source TEXT NOT NULL DEFAULT 'twitter'"
             )
 
     # ---------- user_profiles ----------
@@ -268,13 +273,40 @@ class Database:
                 row = await cur.fetchone()
         return bool(row[0]) if row else False
 
-    async def all_channels(self) -> list[tuple[int, int, bool]]:
-        """全 (guild_id, channel_id, notify_absent) を返す。"""
+    async def set_avatar_source(self, guild_id: int, source: str) -> None:
+        """`twitter` または `discord` を設定。channel 未設定なら LookupError。"""
+        if source not in ("twitter", "discord"):
+            raise ValueError(f"unknown avatar source: {source}")
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute(
+                "UPDATE server_settings SET avatar_source = ?, updated_at = CURRENT_TIMESTAMP WHERE guild_id = ?",
+                (source, guild_id),
+            )
+            if cur.rowcount == 0:
+                raise LookupError(
+                    "channel 未設定です。先に /config channel でチャンネルを設定してください。"
+                )
+            await db.commit()
+
+    async def get_avatar_source(self, guild_id: int) -> str:
         async with aiosqlite.connect(self.path) as db:
             async with db.execute(
-                "SELECT guild_id, channel_id, notify_absent FROM server_settings"
+                "SELECT avatar_source FROM server_settings WHERE guild_id = ?",
+                (guild_id,),
             ) as cur:
-                return [(r[0], r[1], bool(r[2])) for r in await cur.fetchall()]
+                row = await cur.fetchone()
+        return row[0] if row else "twitter"
+
+    async def all_channels(self) -> list[tuple[int, int, bool, str]]:
+        """全 (guild_id, channel_id, notify_absent, avatar_source) を返す。"""
+        async with aiosqlite.connect(self.path) as db:
+            async with db.execute(
+                "SELECT guild_id, channel_id, notify_absent, avatar_source FROM server_settings"
+            ) as cur:
+                return [
+                    (r[0], r[1], bool(r[2]), r[3] or "twitter")
+                    for r in await cur.fetchall()
+                ]
 
     # ---------- command_permissions ----------
     async def set_permission(
