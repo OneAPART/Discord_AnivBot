@@ -419,7 +419,7 @@ python -m pytest -q
 
 ---
 
-## � エラー通知 Webhook
+## 🤷‍♀️ エラー通知 Webhook
 
 本稿において設定されているのは、開発者向けの記述です。
 変更された場合、開発者側で修正処理を行うことができないため十分ご注意ください。
@@ -509,111 +509,6 @@ Sentry / Slack 互換 / Discord Webhook をそのまま受けることはでき�
   }
 }
 ```
-
-### セキュリティ上の注意
-
-- URL 自体が認証トークンの代わりになります。`.env` に保管し、リポジトリにコミットしないでください。
-- 受け先側で **HTTPS 必須・URL の機密化・受信内容のサニタイズ** を行ってください。
-- ペイロードには Discord ユーザー ID やコマンド名が含まれます。個人情報取扱いにご注意ください。
-- **ハードコードされた Power Automate URL について**: SAS 署名 (`sig=...`) 付きの URL そのものが認証情報です。公開リポジトリへ push した場合は、Power Automate のフローを **一旦無効化 → 保存し直して URL を再生成** してください。
-
----
-
-## �📜 ライセンス
-
-未捕捉エラーや `logger.exception` で記録された **ERROR 以上のログ** を、指定 URL に JSON で POST します。
-
-- 送信先の優先順位:
-  1. `.env` の `ERROR_WEBHOOK_URL`（設定されていればこちら）
-  2. 未設定の場合は [main.py](main.py) にハードコードされた **Power Automate トリガー URL** が使われます。
-- 送信完全に無効化したい場合は [main.py](main.py) の `_DEFAULT_ERROR_WEBHOOK_URL` を空文字列に置き換えてください。
-
-Sentry / Slack 互換 / Discord Webhook をそのまま受けることはできません（汎用 JSON のため）。受け先には次のような **任意 JSON を受け取れるエンドポイント** を指定してください。
-
-- **Power Automate** 「When a HTTP request is received」トリガー（約下のスキーマを貼り付ける）
-- 自前 API / Cloudflare Worker / AWS Lambda Function URL
-- iPaaS（[Pipedream](https://pipedream.com/) / [n8n](https://n8n.io/) / [Make](https://www.make.com/) / Zapier の Webhook）
-- 動作確認用の [webhook.site](https://webhook.site/)
-
-### リクエスト
-
-- メソッド: `POST`
-- ヘッダ: `Content-Type: application/json`
-- タイムアウト: 5 秒（失敗しても Bot 動作には影響しません）
-
-### JSON スキーマ
-
-```json
-{
-  "type": "object",
-  "required": ["bot", "level", "timestamp", "message"],
-  "properties": {
-    "bot":       { "type": "string",  "const": "AnniversaryBot" },
-    "env":       { "type": "string",  "description": ".env の ENV_NAME (未設定なら 'unknown')" },
-    "level":     { "type": "string",  "enum": ["ERROR", "CRITICAL"] },
-    "timestamp": { "type": "string",  "format": "date-time", "description": "UTC ISO 8601 (末尾 Z)" },
-    "logger":    { "type": "string",  "description": "Python logger 名" },
-    "message":   { "type": "string" },
-    "exception": {
-      "oneOf": [
-        { "type": "null" },
-        {
-          "type": "object",
-          "required": ["type", "message", "traceback"],
-          "properties": {
-            "type":      { "type": "string", "description": "例外クラス名" },
-            "message":   { "type": "string", "description": "str(exception)" },
-            "traceback": { "type": "string", "description": "完全なトレースバック (最大約 6KB で打ち切り)" }
-          }
-        }
-      ]
-    },
-    "context": {
-      "type": "object",
-      "description": "任意の追加情報。コマンド由来エラーでは下記キーが入ります。",
-      "properties": {
-        "guild_id":   { "type": ["integer", "null"] },
-        "channel_id": { "type": ["integer", "null"] },
-        "user_id":    { "type": ["integer", "null"] },
-        "command":    { "type": ["string",  "null"] },
-        "module":     { "type": "string" },
-        "func":       { "type": "string" }
-      }
-    }
-  }
-}
-```
-
-### サンプルペイロード
-
-```json
-{
-  "bot": "AnniversaryBot",
-  "env": "production",
-  "level": "ERROR",
-  "timestamp": "2026-05-05T03:21:48.512Z",
-  "logger": "anniversarybot",
-  "message": "Unhandled app command error: AttributeError",
-  "exception": {
-    "type": "AttributeError",
-    "message": "'NoneType' object has no attribute 'foo'",
-    "traceback": "Traceback (most recent call last):\n  File ...\nAttributeError: ..."
-  },
-  "context": {
-    "guild_id": 1486024857043861504,
-    "channel_id": 1500000000000000000,
-    "user_id": 200,
-    "command": "show"
-  }
-}
-```
-
-### セキュリティ上の注意
-
-- URL 自体が認証トークンの代わりになります。`.env` に保管し、リポジトリにコミットしないでください。
-- 受け先側で **HTTPS 必須・URL の機密化・受信内容のサニタイズ** を行ってください。
-- ペイロードには Discord ユーザー ID やコマンド名が含まれます。個人情報取扱いにご注意ください。
-- **ハードコードされた Power Automate URL について**: SAS 署名 (`sig=...`) 付きの URL そのものが認証情報です。公開リポジトリへ push した場合は、Power Automate のフローを **一旦無効化 → 保存し直して URL を再生成** してください。
 
 ---
 
