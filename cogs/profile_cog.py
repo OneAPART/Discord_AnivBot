@@ -78,13 +78,17 @@ class ProfileCog(commands.Cog):
     # /show
     # ----------------------------------------------------------
     @app_commands.command(name="show", description="プロフィールを表示します。")
-    @app_commands.describe(user="表示するユーザー (省略時は自分)")
+    @app_commands.describe(
+        user="表示するユーザー (省略時は自分)",
+        public="他の人にも見えるように表示する (既定: 自分のみ)",
+    )
     @app_commands.guild_only()
     @require("show")
     async def show(
         self,
         interaction: discord.Interaction,
         user: discord.User | None = None,
+        public: bool = False,
     ):
         assert interaction.guild is not None
         target = user or interaction.user
@@ -121,8 +125,10 @@ class ProfileCog(commands.Cog):
                 inline=False,
             )
 
-        view = TwitterLinkView(profile.twitter_id) if profile.twitter_id else None
-        await interaction.response.send_message(embed=embed, view=view)
+        kwargs: dict = {"embed": embed, "ephemeral": not public}
+        if profile.twitter_id:
+            kwargs["view"] = TwitterLinkView(profile.twitter_id)
+        await interaction.response.send_message(**kwargs)
 
     # ----------------------------------------------------------
     # /list
@@ -131,13 +137,17 @@ class ProfileCog(commands.Cog):
         name="list",
         description="このサーバーに登録されているプロフィール一覧を表示します。",
     )
-    @app_commands.describe(sort="並び順")
+    @app_commands.describe(
+        sort="並び順",
+        public="他の人にも見えるように表示する (既定: 自分のみ)",
+    )
     @app_commands.guild_only()
     @require("list")
     async def list_profiles(
         self,
         interaction: discord.Interaction,
         sort: Literal["name", "birthday", "anniversary"] = "name",
+        public: bool = False,
     ):
         guild = interaction.guild
         assert guild is not None
@@ -154,7 +164,9 @@ class ProfileCog(commands.Cog):
 
         profiles.sort(key=_sort_key(sort))
         view = ProfileListView(guild, profiles, sort, requester_id=interaction.user.id)
-        await interaction.response.send_message(embed=view.build_embed(), view=view)
+        await interaction.response.send_message(
+            embed=view.build_embed(), view=view, ephemeral=not public
+        )
 
 
 # --------------------------------------------------------------

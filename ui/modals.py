@@ -4,7 +4,12 @@ from __future__ import annotations
 import discord
 
 from db.database import Database, UserProfile
-from utils.validators import normalize_twitter, parse_md, parse_ymd, twitter_url
+from utils.validators import (
+    normalize_twitter,
+    parse_md_optional,
+    parse_ymd_optional,
+    twitter_url,
+)
 
 
 class ProfileModal(discord.ui.Modal, title="プロフィール登録 / 更新"):
@@ -37,19 +42,19 @@ class ProfileModal(discord.ui.Modal, title="プロフィール登録 / 更新"):
             required=False,
         )
         self.birthday_input = discord.ui.TextInput(
-            label="誕生日 (MM/DD)",
-            placeholder="例: 04/15",
+            label="誕生日 (MM/DD) 任意",
+            placeholder="例: 04/15  / 未登録なら空欄",
             max_length=5,
             default=(
                 f"{existing.birth_month:02d}/{existing.birth_day:02d}"
                 if existing and existing.birth_month and existing.birth_day
                 else None
             ),
-            required=True,
+            required=False,
         )
         self.start_input = discord.ui.TextInput(
-            label="活動開始日 (YYYY/MM/DD)",
-            placeholder="例: 2018/04/15",
+            label="活動開始日 (YYYY/MM/DD) 任意",
+            placeholder="例: 2018/04/15  / 未登録なら空欄",
             max_length=10,
             default=(
                 f"{existing.start_year:04d}/{existing.start_month:02d}/{existing.start_day:02d}"
@@ -59,7 +64,7 @@ class ProfileModal(discord.ui.Modal, title="プロフィール登録 / 更新"):
                 and existing.start_day
                 else None
             ),
-            required=True,
+            required=False,
         )
 
         self.add_item(self.name_input)
@@ -75,8 +80,8 @@ class ProfileModal(discord.ui.Modal, title="プロフィール登録 / 更新"):
             return
         try:
             twitter = normalize_twitter(self.twitter_input.value)
-            b_month, b_day = parse_md(self.birthday_input.value)
-            s_year, s_month, s_day = parse_ymd(self.start_input.value)
+            b_month, b_day = parse_md_optional(self.birthday_input.value)
+            s_year, s_month, s_day = parse_ymd_optional(self.start_input.value)
         except ValueError as e:
             await interaction.response.send_message(
                 f":warning: 入力エラー: {e}", ephemeral=True

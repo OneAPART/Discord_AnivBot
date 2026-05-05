@@ -9,17 +9,17 @@ Discord ユーザーの **誕生日** と **活動記念日** を、毎日 JST 0
 
 | 機能 | コマンド | 説明 |
 |------|---------|------|
-| プロフィール登録 / 編集 | `/profile [user]` | Modal フォームで一括入力。`user` を指定すると他ユーザーを代理登録できます（要オーナー権限・既定）。既存値はプリフィルされます。**サーバーごとに独立して保持** されます。 |
+| プロフィール登録 / 編集 | `/profile [user]` | Modal フォームで一括入力。`user` を指定すると他ユーザーを代理登録できます（要オーナー権限・既定）。誕生日・活動開始日・`Twitter ID` はいずれも**任意**。既存値はプリフィルされます。**サーバーごとに独立して保持** されます。 |
 | プロフィール削除 | `/profile_delete [user]` | このサーバーからプロフィールを削除します。 |
-| プロフィール表示 | `/show [user]` | 自分または指定ユーザーの情報を Embed 表示。Twitter ボタン付き。 |
-| プロフィール一覧 | `/list [sort]` | 当サーバー所属の登録ユーザー一覧。`name` / `birthday` / `anniversary` で並び替え可、ページャ付き。 |
+| プロフィール表示 | `/show [user] [public]` | 自分または指定ユーザーの情報を Embed 表示。既定では**自分にしか見えません** (ephemeral)。`public:True` でチャンネル公開表示。Twitter 未登録でも崩れません。 |
+| プロフィール一覧 | `/list [sort] [public]` | 当サーバー所属の登録ユーザー一覧。`name` / `birthday` / `anniversary` で並び替え可、ページャー付き。既定では自分にしか見えません (ephemeral)。`public:True` でチャンネル公開表示。 |
 | 通知チャンネル設定 | `/config channel <channel>` | お祝い投稿先をサーバーごとに設定（要 `サーバー管理` 権限）。 |
 | 不在ユーザー通知設定 | `/config absent <true\|false>` | サーバーに不在のユーザーを通知するか切り替え。既定は `false`（在籍者のみ通知）。 |
 | 権限設定 | `/config permission <command> <mode> [role1..3]` | コマンド実行権限を `owner` / `everyone` / `role` から選択（要 `サーバー管理` 権限）。 |
 | 設定確認 | `/config show` | 通知チャンネルとコマンド権限の現状を一覧表示。 |
 | 自動通知 | （自動） | 毎日 **JST 00:00** に誕生日・活動記念日を投稿。記念日は「○周年」を自動計算。 |
 
-すべての通知 / プロフィール表示には Twitter プロフィールへ即座に飛べる **リンクボタン** が付きます。
+すべての通知 / プロフィール表示には Twitter プロフィールへ即座に飛べる **リンクボタン** が付きます（登録している場合のみ）。
 
 ---
 
@@ -119,18 +119,23 @@ python main.py
 |------|------|-----|------|
 | 表示名 | 自由文字列（最大64） | `たろう` | ✅ |
 | Twitter ID | `@username`（半角英数+`_`、最大15） | `@example_user` | 任意 |
-| 誕生日 | `MM/DD` | `04/15` | ✅ |
-| 活動開始日 | `YYYY/MM/DD` | `2018/04/15` | ✅ |
+| 誕生日 | `MM/DD`（空欄で未登録） | `04/15` | 任意 |
+| 活動開始日 | `YYYY/MM/DD`（空欄で未登録） | `2018/04/15` | 任意 |
 
 > 区切り文字は `/` `-` `.` のいずれも受け付けます（例: `2018-04-15`）。
 > うるう年・月別最大日数も自動チェックします。
+> 誕生日 / 活動開始日 / Twitter ID はいずれも**未登録可**で、未登録項目は表示・一覧・通知で自動的にスキップされます。
 
 ### プロフィール確認
 
 ```
-/show               # 自分のプロフィール
-/show user:@たろう  # 他のメンバーのプロフィール
+/show                              # 自分のプロフィール（自分にしか見えない）
+/show user:@たろう                  # 他のメンバーのプロフィール
+/show user:@たろう public:True       # チャンネルに公開して表示
 ```
+
+- 既定は **ephemeral**（実行者にしか見えない）。`public:True` を付けるとチャンネルに公開されます。
+- Twitter / 誕生日 / 活動開始日が未登録の項目は自動で非表示になります。
 
 ### 通知チャンネル設定（管理者向け）
 
@@ -190,11 +195,13 @@ python main.py
 ### 一覧表示
 
 ```
-/list                        # 名前順
-/list sort:birthday          # 誕生日順 (1/1 → 12/31)
-/list sort:anniversary       # 活動開始日順 (古い順)
+/list                              # 名前順（自分にしか見えない）
+/list sort:birthday                # 誕生日順 (1/1 → 12/31)
+/list sort:anniversary             # 活動開始日順 (古い順)
+/list public:True                  # チャンネルに公開して表示
 ```
 
+- 既定は **ephemeral**（実行者にしか見えない）。`public:True` を付けるとチャンネルに公開されます。
 - 当サーバーに所属している **かつ** プロフィール登録済みのメンバーのみ表示されます。
 - 1 ページ 10 件。`◀ 前へ` `次へ ▶` ボタンでページ送り（実行者のみ操作可、3 分でタイムアウト）。
 
@@ -205,7 +212,7 @@ python main.py
 - 🎂 **誕生日** が今日のメンバーへお祝いメッセージ
 - 🎉 **活動記念日** が今日のメンバーへ「○周年」表記付きメッセージ
 
-メンションされた本人へ Embed と Twitter ボタンが届きます。
+メンションされた本人へ Embed と（登録されていれば）Twitter ボタンが届きます。誕生日 / 活動開始日が未登録のユーザーはそもそも通知対象になりません（「準備中」用途に便利）。
 
 ---
 
@@ -222,9 +229,9 @@ SQLite ファイル（既定: `anniversary.db`）にすべて保存されます�
 | `guild_id` | INTEGER | 複合主キー (Discord Guild ID) |
 | `user_id` | INTEGER | 複合主キー (Discord User ID) |
 | `name` | TEXT | 表示名 |
-| `twitter_id` | TEXT | `@handle` 形式 |
-| `birth_month` / `birth_day` | INTEGER | 誕生月日 |
-| `start_year` / `start_month` / `start_day` | INTEGER | 活動開始日 |
+| `twitter_id` | TEXT | `@handle` 形式（NULL 可） |
+| `birth_month` / `birth_day` | INTEGER | 誕生月日（NULL 可） |
+| `start_year` / `start_month` / `start_day` | INTEGER | 活動開始日（NULL 可） |
 | `updated_at` | TIMESTAMP | 自動更新 |
 
 > ⚠️ **旧バージョンからアップグレードした場合**: 旧スキーマの `user_profiles` は起動時に自動的に `_legacy_user_profiles` にリネームされ、退避されます。所属サーバーが特定できないため自動移行はされません。各サーバーで `/profile` を再登録するか、必要なら `_legacy_user_profiles` から手動で SQL でコピーしてください。
@@ -304,13 +311,18 @@ python -m pytest -q
 |---|------|---------|
 | 1 | `/profile` を実行し Modal を送信 | 「保存しました」が表示され、DB に行が増える |
 | 2 | 不正値 (例: 誕生日に `13/40`) で送信 | 入力エラーメッセージが表示される |
-| 3 | `/show` を実行 | 自分の Embed と Twitter ボタンが出る |
+| 2b | 誕生日・活動開始日を空欄で送信 | エラーにならず保存され、`/show` でその項目が非表示 |
+| 3 | `/show` を実行 | 自分にしか見えない (ephemeral) Embed が出る |
+| 3b | `/show public:True` | チャンネルに公開される |
+| 3c | Twitter 未登録のユーザーを `/show` | Twitter フィールド・ボタンが出ず、エラーも出ない |
 | 4 | `/show user:@他人` | 他人の情報が出る、未登録なら未登録メッセージ |
-| 5 | `/list sort:birthday` | 月日順に並び、ページネーションが動く |
+| 5 | `/list sort:birthday` | 月日順に並び、ページネーションが動く（既定 ephemeral） |
+| 5b | `/list public:True` | チャンネルに公開される |
 | 6 | `/config channel #任意` | 通知チャンネルが保存される |
 | 7 | `/config permission command:list mode:role role1:@テストロール` | ロール未保有メンバーで `/list` が拒否される |
 | 8 | `/config permission command:profile mode:owner` | オーナー以外で `/profile` が拒否される |
 | 9 | `/config show` | 現在の設定がすべて見える |
+| 10 | `/profile user:@他人`（オーナーで実行） | 代理登録できるモーダルタイトルに対象名が出る |
 
 ### C. 通知タスクの即時試験
 

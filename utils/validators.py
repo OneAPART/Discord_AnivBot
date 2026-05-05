@@ -37,6 +37,13 @@ def parse_md(text: str) -> tuple[int, int]:
     return month, day
 
 
+def parse_md_optional(text: Optional[str]) -> tuple[Optional[int], Optional[int]]:
+    """空文字 / None を許容する `MM/DD` パーサ。空なら (None, None)。"""
+    if text is None or not text.strip():
+        return None, None
+    return parse_md(text)
+
+
 def parse_ymd(text: str) -> tuple[int, int, int]:
     """`YYYY/MM/DD` を (year, month, day) にパース。"""
     text = text.strip().replace("-", "/").replace(".", "/")
@@ -53,6 +60,15 @@ def parse_ymd(text: str) -> tuple[int, int, int]:
     except ValueError as e:
         raise ValueError(f"日付が不正です: {e}") from e
     return year, month, day
+
+
+def parse_ymd_optional(
+    text: Optional[str],
+) -> tuple[Optional[int], Optional[int], Optional[int]]:
+    """空文字 / None を許容する `YYYY/MM/DD` パーサ。空なら (None, None, None)。"""
+    if text is None or not text.strip():
+        return None, None, None
+    return parse_ymd(text)
 
 
 def _validate_md(month: int, day: int) -> None:

@@ -1,6 +1,13 @@
 import pytest
 
-from utils.validators import normalize_twitter, parse_md, parse_ymd, twitter_url
+from utils.validators import (
+    normalize_twitter,
+    parse_md,
+    parse_md_optional,
+    parse_ymd,
+    parse_ymd_optional,
+    twitter_url,
+)
 
 
 # --- Twitter ---
@@ -70,3 +77,32 @@ def test_parse_ymd_ok():
 def test_parse_ymd_ng(raw):
     with pytest.raises(ValueError):
         parse_ymd(raw)
+
+
+# --- Optional 任意入力 ---
+@pytest.mark.parametrize("raw", [None, "", "   "])
+def test_parse_md_optional_empty(raw):
+    assert parse_md_optional(raw) == (None, None)
+
+
+def test_parse_md_optional_value():
+    assert parse_md_optional("4/15") == (4, 15)
+
+
+def test_parse_md_optional_invalid_still_raises():
+    with pytest.raises(ValueError):
+        parse_md_optional("13/01")
+
+
+@pytest.mark.parametrize("raw", [None, "", "   "])
+def test_parse_ymd_optional_empty(raw):
+    assert parse_ymd_optional(raw) == (None, None, None)
+
+
+def test_parse_ymd_optional_value():
+    assert parse_ymd_optional("2018/04/15") == (2018, 4, 15)
+
+
+def test_parse_ymd_optional_invalid_still_raises():
+    with pytest.raises(ValueError):
+        parse_ymd_optional("2019/02/29")
