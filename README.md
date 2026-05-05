@@ -45,13 +45,20 @@ AnniversaryBot/
 ├── db/
 │   └── database.py         # aiosqlite による非同期 DAO + スキーマ
 ├── cogs/
-│   ├── profile_cog.py      # /profile, /show
-│   ├── config_cog.py       # /config channel
-│   └── anniversary_cog.py  # tasks.loop による JST 00:00 通知
+│   ├── profile_cog.py      # /profile, /show, /list, /profile_delete
+│   ├── config_cog.py       # /config channel, permission, absent, avatar, show
+│   ├── admin_cog.py        # /admin trigger, next_run, sync
+│   └── anniversary_cog.py  # tasks.loop による JST 00:00 通知
 ├── ui/
-│   └── modals.py           # ProfileModal + Twitter リンクボタン View
-└── utils/
-    └── validators.py       # 日付・Twitter ID パース / バリデーション
+│   └── modals.py           # ProfileModal + Twitter リンクボタン View
+├── utils/
+│   ├── validators.py       # 日付・Twitter ID パース / バリデーション
+│   ├── permissions.py      # コマンド権限判定
+│   ├── avatar.py           # アバター URL 解決 (X / Discord)
+│   └── error_notifier.py   # エラー通知 Webhook (HTTP POST)
+└── scripts/
+    ├── clear_global_commands.py  # グローバル登録を一括削除するワンショット
+    └── clear_guild_commands.py   # 特定ギルドの登録を一括削除するワンショット
 ```
 
 ---
@@ -338,6 +345,9 @@ python -m pytest -q
 | 8 | `/config permission command:profile mode:owner` | オーナー以外で `/profile` が拒否される |
 | 9 | `/config show` | 現在の設定がすべて見える |
 | 10 | `/profile user:@他人`（オーナーで実行） | 代理登録できるモーダルタイトルに対象名が出る |
+| 11 | `/config avatar source:twitter` 後に `/admin trigger` | 通知カード右上に X(Twitter) のアバター画像が表示される |
+| 12 | `/config avatar source:discord` 後に `/admin trigger` | 通知カード右上に Discord のアバター画像が表示される |
+| 13 | Twitter 未登録ユーザーで `source:twitter` で通知 | Discord アバターへフォールバックされる |
 
 ### C. 通知タスクの即時試験
 
@@ -382,11 +392,134 @@ python -m pytest -q
 | `DISCORD_TOKEN が未設定です` | `.env` が無い、またはキー名が違います。`.env.example` を参照。 |
 | 入力エラーで Modal が弾かれる | 月日は `MM/DD`、活動開始日は `YYYY/MM/DD`。Twitter ID は `@英数_` のみ（最大15文字）。 |
 | 「このコマンドを実行できるロールを持っていません」と出る | 管理者に `/config permission` の設定を確認してもらってください。`/config show` で現状確認できます。 |
+| 同じスラッシュコマンドが二重に表示される | グローバル登録とギルド登録が両方残っています。`scripts/clear_global_commands.py --yes`（グローバル全削除）または `scripts/clear_guild_commands.py --yes`（テストギルド全削除）を実行 → `python main.py` で再起動して再登録してください。詳細は次節「コマンド同期スクリプト」参照。 |
 | トークンを誤って公開した | 直ちに Developer Portal で **Reset Token** → 新しいトークンを `.env` に再設定。 |
 
 ---
 
+## 🧹 コマンド同期スクリプト
+
+[scripts/](scripts/) に、スラッシュコマンドの登録状態をクリーンアップするためのワンショットスクリプトを用意しています。
+
+| スクリプト | 用途 | 反映 |
+|---|---|---|
+| `scripts/clear_global_commands.py` | **グローバル登録**を全削除 | 各クライアントへの反映に最大 1 時間 |
+| `scripts/clear_guild_commands.py`  | 指定ギルド（既定は `.env` の `TEST_GUILD_ID`）の登録を全削除 | **即時** |
+
+実行例:
+
+```powershell
+# 安全のため --yes が必須
+.\venv\Scripts\python.exe scripts\clear_global_commands.py --yes
+.\venv\Scripts\python.exe scripts\clear_guild_commands.py --yes
+.\venv\Scripts\python.exe scripts\clear_guild_commands.py --yes --guild 1234567890123456789
+```
+
+実行後はそのまま `python main.py` で起動すれば、ソースの定義から再登録されます（`TEST_GUILD_ID` 設定下なら即時にギルドへ）。サーバーオーナーであれば、わざわざスクリプトを実行せず Discord 上から `/admin sync clear:True` でも同等のことができます。
+
+---
+
 ## � エラー通知 Webhook
+
+本稿において設定されているのは、開発者向けの記述です。
+変更された場合、開発者側で修正処理を行うことができないため十分ご注意ください。
+未捕捉エラーや `logger.exception` で記録された **ERROR 以上のログ** を、指定 URL に JSON で POST します。
+
+- 送信先の優先順位:
+  1. `.env` の `ERROR_WEBHOOK_URL`（設定されていればこちら）
+  2. 未設定の場合は [main.py](main.py) にハードコードされた **Power Automate トリガー URL** が使われます。
+- 送信完全に無効化したい場合は [main.py](main.py) の `_DEFAULT_ERROR_WEBHOOK_URL` を空文字列に置き換えてください。
+
+Sentry / Slack 互換 / Discord Webhook をそのまま受けることはできません（汎用 JSON のため）。受け先には次のような **任意 JSON を受け取れるエンドポイント** を指定してください。
+
+- **Power Automate**「When a HTTP request is received」トリガー（約下のスキーマを貼り付ける）
+- 自前 API / Cloudflare Worker / AWS Lambda Function URL
+- iPaaS（[Pipedream](https://pipedream.com/) / [n8n](https://n8n.io/) / [Make](https://www.make.com/) / Zapier の Webhook）
+- 動作確認用の [webhook.site](https://webhook.site/)
+
+### リクエスト
+
+- メソッド: `POST`
+- ヘッダ: `Content-Type: application/json`
+- タイムアウト: 5 秒（失敗しても Bot 動作には影響しません）
+
+### JSON スキーマ
+
+```json
+{
+  "type": "object",
+  "required": ["bot", "level", "timestamp", "message"],
+  "properties": {
+    "bot":       { "type": "string",  "const": "AnniversaryBot" },
+    "env":       { "type": "string",  "description": ".env の ENV_NAME (未設定なら 'unknown')" },
+    "level":     { "type": "string",  "enum": ["ERROR", "CRITICAL"] },
+    "timestamp": { "type": "string",  "format": "date-time", "description": "UTC ISO 8601 (末尾 Z)" },
+    "logger":    { "type": "string",  "description": "Python logger 名" },
+    "message":   { "type": "string" },
+    "exception": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["type", "message", "traceback"],
+          "properties": {
+            "type":      { "type": "string", "description": "例外クラス名" },
+            "message":   { "type": "string", "description": "str(exception)" },
+            "traceback": { "type": "string", "description": "完全なトレースバック (最大約 6KB で打ち切り)" }
+          }
+        }
+      ]
+    },
+    "context": {
+      "type": "object",
+      "description": "任意の追加情報。コマンド由来エラーでは下記キーが入ります。",
+      "properties": {
+        "guild_id":   { "type": ["integer", "null"] },
+        "channel_id": { "type": ["integer", "null"] },
+        "user_id":    { "type": ["integer", "null"] },
+        "command":    { "type": ["string",  "null"] },
+        "module":     { "type": "string" },
+        "func":       { "type": "string" }
+      }
+    }
+  }
+}
+```
+
+### サンプルペイロード
+
+```json
+{
+  "bot": "AnniversaryBot",
+  "env": "production",
+  "level": "ERROR",
+  "timestamp": "2026-05-05T03:21:48.512Z",
+  "logger": "anniversarybot",
+  "message": "Unhandled app command error: AttributeError",
+  "exception": {
+    "type": "AttributeError",
+    "message": "'NoneType' object has no attribute 'foo'",
+    "traceback": "Traceback (most recent call last):\n  File ...\nAttributeError: ..."
+  },
+  "context": {
+    "guild_id": 1486024857043861504,
+    "channel_id": 1500000000000000000,
+    "user_id": 200,
+    "command": "show"
+  }
+}
+```
+
+### セキュリティ上の注意
+
+- URL 自体が認証トークンの代わりになります。`.env` に保管し、リポジトリにコミットしないでください。
+- 受け先側で **HTTPS 必須・URL の機密化・受信内容のサニタイズ** を行ってください。
+- ペイロードには Discord ユーザー ID やコマンド名が含まれます。個人情報取扱いにご注意ください。
+- **ハードコードされた Power Automate URL について**: SAS 署名 (`sig=...`) 付きの URL そのものが認証情報です。公開リポジトリへ push した場合は、Power Automate のフローを **一旦無効化 → 保存し直して URL を再生成** してください。
+
+---
+
+## �📜 ライセンス
 
 未捕捉エラーや `logger.exception` で記録された **ERROR 以上のログ** を、指定 URL に JSON で POST します。
 
