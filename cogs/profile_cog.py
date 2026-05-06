@@ -14,6 +14,8 @@ from utils.validators import twitter_url
 
 
 PAGE_SIZE = 10
+# ページャーの有効期限。Discord の Interaction トークン有効期間に合わせ 15 分。
+VIEW_TIMEOUT_SEC = 15 * 60
 
 
 class ProfileCog(commands.Cog):
@@ -163,10 +165,21 @@ class ProfileCog(commands.Cog):
             return
 
         profiles.sort(key=_sort_key(sort))
-        view = ProfileListView(guild, profiles, sort, requester_id=interaction.user.id)
+        # public=True のときは誰でもページ送りできるよう requester_id=None
+        view = ProfileListView(
+            guild,
+            profiles,
+            sort,
+            requester_id=None if public else interaction.user.id,
+        )
         await interaction.response.send_message(
             embed=view.build_embed(), view=view, ephemeral=not public
         )
+        # on_timeout でボタンを無効化するため元メッセージを保持
+        try:
+            view.message = await interaction.original_response()
+        except discord.HTTPException:
+            view.message = None
 
 
 # --------------------------------------------------------------
@@ -191,13 +204,16 @@ class ProfileListView(discord.ui.View):
         guild: discord.Guild,
         profiles: list[UserProfile],
         sort: str,
-        requester_id: int,
+        requester_id: int | None,
     ):
-        super().__init__(timeout=180)
+        super().__init__(timeout=VIEW_TIMEOUT_SEC)
         self.guild = guild
         self.profiles = profiles
         self.sort = sort
+        # None の場合は誰でも操作可 (公開モード)
         self.requester_id = requester_id
+        # 初期メッセージへの参照。on_timeout でボタンを無効化するため保持。
+        self.message: discord.Message | discord.InteractionMessage | None = None
         self.page = 0
         self.max_page = max(0, (len(profiles) - 1) // PAGE_SIZE)
         self._update_buttons()
@@ -236,12 +252,65 @@ class ProfileListView(discord.ui.View):
         return embed
 
     async def _guard(self, interaction: discord.Interaction) -> bool:
+        # requester_id が None なら誰でも操作可 (public モード)
+        if self.requester_id is None:
+            return True
         if interaction.user.id != self.requester_id:
             await interaction.response.send_message(
                 "このページ操作は実行者のみ行えます。", ephemeral=True
             )
             return False
         return True
+
+    async def _safe_edit(self, interaction: discord.Interaction) -> None:
+        """defer で 15 分の応答猟予を確保したうえでメッセージを更新する。
+
+        - ボタンクリックの Interaction トークンは Discord 仕様で 15 分有効。
+        - 3 秒以内に `response.defer()` しておけば、その後は 15 分間 followup / edit 可能。
+        - 15 分を超過してクリックされた場合は Discord が 10062 (Unknown interaction)
+          を返すため、ユーザーへ「再実行してください」と伝える。
+        """
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.defer()  # 15 分の猟予を確保
+            await interaction.edit_original_response(
+                embed=self.build_embed(), view=self
+            )
+        except discord.NotFound:
+            # Unknown interaction (10062) — 15 分を超えてクリックされた / メッセージが削除された
+            await self._notify_expired(interaction)
+        except discord.HTTPException:
+            # その他一過性エラーもページャーではサイレント化
+            pass
+
+    async def _notify_expired(self, interaction: discord.Interaction) -> None:
+        """ボタンの猟予期限を超えた際のユーザー向け案内。送信失敗は黙視。"""
+        # ボタンを全て無効化して表示だけ更新を試みる (失敗してもよい)
+        for child in self.children:
+            if isinstance(child, discord.ui.Button):
+                child.disabled = True
+        try:
+            await interaction.followup.send(
+                ":hourglass: このページ操作は有効期限 (15分) を超えたため受け付けられませんでした。\n"
+                "お手数ですが **コマンドを再実行** してください。",
+                ephemeral=True,
+            )
+        except discord.HTTPException:
+            pass
+
+    async def on_timeout(self) -> None:
+        """15 分経過した View のボタンを無効化する。"""
+        for child in self.children:
+            if isinstance(child, discord.ui.Button):
+                child.disabled = True
+        if self.message is not None:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
+            finally:
+                # 参照を解放してメモリリークを防止
+                self.message = None
 
     @discord.ui.button(label="◀ 前へ", style=discord.ButtonStyle.secondary)
     async def prev_button(
@@ -251,7 +320,7 @@ class ProfileListView(discord.ui.View):
             return
         self.page = max(0, self.page - 1)
         self._update_buttons()
-        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+        await self._safe_edit(interaction)
 
     @discord.ui.button(label="次へ ▶", style=discord.ButtonStyle.secondary)
     async def next_button(
@@ -261,7 +330,19 @@ class ProfileListView(discord.ui.View):
             return
         self.page = min(self.max_page, self.page + 1)
         self._update_buttons()
-        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+        await self._safe_edit(interaction)
+
+    async def on_error(
+        self,
+        interaction: discord.Interaction,
+        error: Exception,
+        item: discord.ui.Item,
+    ) -> None:
+        # NotFound (Unknown interaction) は Webhook 通知しない (ノイズ)
+        if isinstance(error, discord.NotFound):
+            return
+        # それ以外は既定のハンドラ (logger へ)
+        await super().on_error(interaction, error, item)
 
 
 async def setup(bot: commands.Bot):

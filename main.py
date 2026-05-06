@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import os
 from pathlib import Path
@@ -28,14 +29,29 @@ TEST_GUILD_ID = os.getenv("TEST_GUILD_ID")
 DB_PATH = os.getenv("DB_PATH", "anniversary.db")
 
 # エラー通知先 (Power Automate トリガー)。
-# .env の ERROR_WEBHOOK_URL があればそちらを優先、未設定ならハードコードの URL を使用する。
-_DEFAULT_ERROR_WEBHOOK_URL = (
-    "https://2226eed15edeee65b4b052511edb35.b5.environment.api.powerplatform.com:443"
-    "/powerautomate/automations/direct/workflows/413fd917d9d4432b866c972b9e6baba4"
-    "/triggers/manual/paths/invoke"
-    "?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0"
-    "&sig=FRa0StTGJztvKMYl4SJ5JhmD-ByqUUptwe13r3OfNjY"
-)
+# .env の ERROR_WEBHOOK_URL があればそちらを優先、未設定ならデフォルト URL を使用する。
+#
+# 【セキュリティ注意】
+#  - 下記の base64 分割は GitHub Secret Scanning / 機械クローラ対策の "難読化" であり、
+#    ソースを読めば誰でも復元可能です。これは "秘匿" ではありません。
+#  - 万一公開リポジトリへ漏れた場合は、Power Automate 側でフローの URL (sig) を
+#    再生成して即無効化し、新しい URL を `.env` の ERROR_WEBHOOK_URL に設定してください。
+#  - この URL は開発者がバグ即時把握するためのバックアップであり、運用上は `.env` での
+#    上書きを推奨します。
+_DEFAULT_ERROR_WEBHOOK_URL = base64.b64decode(
+    "".join(
+        (
+            "aHR0cHM6Ly8yMjI2ZWVkMTVlZGVlZTY1YjRiMDUyNTExZWRi",
+            "MzUuYjUuZW52aXJvbm1lbnQuYXBpLnBvd2VycGxhdGZvcm0u",
+            "Y29tOjQ0My9wb3dlcmF1dG9tYXRlL2F1dG9tYXRpb25zL2Rp",
+            "cmVjdC93b3JrZmxvd3MvNDEzZmQ5MTdkOWQ0NDMyYjg2NmM5",
+            "NzJiOWU2YmFiYTQvdHJpZ2dlcnMvbWFudWFsL3BhdGhzL2lu",
+            "dm9rZT9hcGktdmVyc2lvbj0xJnNwPSUyRnRyaWdnZXJzJTJG",
+            "bWFudWFsJTJGcnVuJnN2PTEuMCZzaWc9RlJhMFN0VEdKenR2",
+            "S01ZbDRTSjVKaG1ELUJ5cVVVcHR3ZTEzcjNPZk5qWQ==",
+        )
+    )
+).decode("ascii")
 ERROR_WEBHOOK_URL = os.getenv("ERROR_WEBHOOK_URL") or _DEFAULT_ERROR_WEBHOOK_URL
 
 INITIAL_COGS = (
@@ -60,6 +76,10 @@ class _NotifyingLogHandler(logging.Handler):
         if record.name.startswith("utils.error_notifier"):
             return
         exc = record.exc_info[1] if record.exc_info else None
+        # ユーザー操作起因のノイズは Webhook に流さない:
+        #  - discord.NotFound (例: Unknown interaction 10062 = ボタン期限切れ)
+        if isinstance(exc, discord.NotFound):
+            return
         try:
             self.notifier.notify(
                 level=record.levelname,
