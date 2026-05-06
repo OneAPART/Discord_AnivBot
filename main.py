@@ -109,6 +109,21 @@ class AnniversaryBot(commands.Bot):
             msg = f":no_entry: {error.message}"
         elif isinstance(error, app_commands.CheckFailure):
             msg = ":no_entry: このコマンドを実行する権限がありません。"
+        elif isinstance(error, app_commands.TransformerError):
+            # 引数の自動変換失敗 (例: チャンネル選択を手入力された等)。
+            # ユーザー操作ミスのため Webhook 通知はせず、案内のみ返す。
+            log.info(
+                "TransformerError on /%s: value=%r option_type=%s",
+                interaction.command.qualified_name if interaction.command else "?",
+                getattr(error, "value", None),
+                getattr(error, "type", None),
+            )
+            value = getattr(error, "value", None)
+            msg = (
+                f":warning: 引数 `{value}` を正しく解釈できませんでした。\n"
+                "サジェスト一覧から候補を **クリックして選択** してください "
+                "（チャンネル指定の場合は `#チャンネル名` を選ぶか、`#` を入力すると候補が出ます）。"
+            )
         else:
             log.exception("Unhandled app command error: %s", error)
             # 外部 Webhook へ通知（コンテキスト付き）
