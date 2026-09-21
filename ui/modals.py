@@ -4,6 +4,7 @@ from __future__ import annotations
 import discord
 
 from db.database import Database, UserProfile
+from utils.permissions import PermissionDenied, check_profile_target, is_allowed
 from utils.validators import (
     normalize_twitter,
     parse_md_optional,
@@ -73,11 +74,17 @@ class ProfileModal(discord.ui.Modal, title="プロフィール登録 / 更新"):
         self.add_item(self.start_input)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        if interaction.guild is None:
+        target_uid = self.target_user_id or interaction.user.id
+        try:
+            await is_allowed(self.db, interaction, "profile")
+            check_profile_target(interaction, target_uid)
+        except PermissionDenied as e:
             await interaction.response.send_message(
-                ":x: サーバー内で実行してください。", ephemeral=True
+                f":no_entry: {e.message}", ephemeral=True
             )
             return
+
+        assert interaction.guild is not None
         try:
             twitter = normalize_twitter(self.twitter_input.value)
             b_month, b_day = parse_md_optional(self.birthday_input.value)
@@ -88,7 +95,6 @@ class ProfileModal(discord.ui.Modal, title="プロフィール登録 / 更新"):
             )
             return
 
-        target_uid = self.target_user_id or interaction.user.id
         profile = UserProfile(
             guild_id=interaction.guild.id,
             user_id=target_uid,

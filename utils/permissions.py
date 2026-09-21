@@ -3,10 +3,13 @@
 サーバー（ギルド）ごとに、コマンド単位で次の3モードを選択できる。
 
 - ``owner``    : サーバーオーナーのみ実行可
-- ``everyone`` : 全員実行可（既定）
+- ``everyone`` : 全員実行可
 - ``role``     : 指定ロールを保持しているメンバーのみ実行可
 
-DM での実行は常に拒否する。
+未設定時は ``profile`` のみ ``everyone``、それ以外は ``owner``。
+``profile_delete`` は ``profile`` の設定を共有する。他人のプロフィールの
+登録・編集・削除には、コマンド権限に加えてサーバーオーナーであることが必要。
+DM およびサーバーメンバー以外の実行は常に拒否する。
 """
 from __future__ import annotations
 
@@ -17,11 +20,16 @@ from db.database import Database
 
 
 class PermissionDenied(app_commands.CheckFailure):
-    """権限不足。グローバル on_app_command_error で文言を出すために使用。"""
+    """権限不足。コマンドと Modal の応答で案内するために使用。"""
 
     def __init__(self, message: str):
         super().__init__(message)
         self.message = message
+
+
+def default_permission_mode(command_name: str) -> str:
+    """明示設定がない場合の権限モード。未知のコマンドはオーナー限定。"""
+    return "everyone" if command_name == "profile" else "owner"
 
 
 async def is_allowed(
@@ -36,7 +44,7 @@ async def is_allowed(
         raise PermissionDenied("このコマンドはサーバー内で実行してください。")
 
     perm = await db.get_permission(interaction.guild.id, command_name)
-    mode = perm.mode if perm else "owner"  # 既定: オーナーのみ
+    mode = perm.mode if perm else default_permission_mode(command_name)
 
     if mode == "everyone":
         return True
@@ -58,6 +66,21 @@ async def is_allowed(
         raise PermissionDenied("このコマンドを実行できるロールを持っていません。")
 
     raise PermissionDenied(f"未知の権限モードです: {mode}")
+
+
+def check_profile_target(
+    interaction: discord.Interaction, target_user_id: int
+) -> None:
+    """コマンド権限とは別に、他人のプロフィール操作をオーナーに制限する。"""
+    if interaction.guild is None:
+        raise PermissionDenied("このコマンドはサーバー内で実行してください。")
+    if (
+        target_user_id != interaction.user.id
+        and interaction.user.id != interaction.guild.owner_id
+    ):
+        raise PermissionDenied(
+            "他のユーザーのプロフィールを登録・編集・削除できるのはサーバーオーナーのみです。"
+        )
 
 
 def require(command_name: str):
