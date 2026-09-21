@@ -9,8 +9,8 @@ Discord ユーザーの **誕生日** と **活動記念日** を、毎日 JST 0
 
 | 機能 | コマンド | 説明 |
 |------|---------|------|
-| プロフィール登録 / 編集 | `/profile [user]` | Modal フォームで一括入力。`user` を指定すると他ユーザーを代理登録できます（要オーナー権限・既定）。誕生日・活動開始日・`Twitter ID` はいずれも**任意**。既存値はプリフィルされます。**サーバーごとに独立して保持** されます。 |
-| プロフィール削除 | `/profile_delete [user]` | このサーバーからプロフィールを削除します。 |
+| プロフィール登録 / 編集 | `/profile [user]` | Modal フォームで一括入力。権限未設定時は全員が自分を登録・編集可能。他ユーザーの代理登録・編集は常にサーバーオーナー限定（コマンド権限も必要）。誕生日・活動開始日・`Twitter ID` はいずれも**任意**。既存値はプリフィルされます。**サーバーごとに独立して保持** されます。 |
+| プロフィール削除 | `/profile_delete [user]` | このサーバーからプロフィールを削除します。`profile` の権限設定を共有し、未設定時は全員が自分を削除可能。他ユーザーの削除は常にサーバーオーナー限定（コマンド権限も必要）。 |
 | プロフィール表示 | `/show [user] [public]` | 自分または指定ユーザーの情報を Embed 表示。既定では**自分にしか見えません** (ephemeral)。`public:True` でチャンネル公開表示。Twitter 未登録でも崩れません。 |
 | プロフィール一覧 | `/list [sort] [public]` | 当サーバー所属の登録ユーザー一覧。`name` / `birthday` / `anniversary` で並び替え可、ページャー付き。既定では自分にしか見えません (ephemeral)。`public:True` でチャンネル公開表示。 |
 | 通知チャンネル設定 | `/config channel <channel>` | お祝い投稿先をサーバーごとに設定（要 `サーバー管理` 権限）。 |
@@ -125,6 +125,9 @@ python main.py
 1. サーバーで `/profile` を実行。
 2. 表示された Modal に入力して送信。
 
+`user` の省略と自分の明示指定は同じ本人操作です。権限未設定のサーバーでは全員が自分の登録・編集・削除を行えます。既存の明示設定がある場合は、その設定に従います。
+他人を指定する登録・編集・削除は、コマンド権限を満たす**サーバーオーナーのみ**可能です。Modal の送信時にも現在のコマンド権限と対象操作の権限を再確認し、権限がなくなっていれば保存せずに案内します。
+
 | 項目 | 形式 | 例 | 必須 |
 |------|------|-----|------|
 | 表示名 | 自由文字列（最大64） | `たろう` | ✅ |
@@ -172,7 +175,7 @@ python main.py
 
 ### コマンド権限の制御（管理者向け）
 
-`/profile` `/show` `/list` の各コマンドに対して、サーバーごとに実行可否を設定できます。
+`/profile` `/show` `/list` の各コマンドに対して、サーバーごとに実行可否を設定できます。`/profile_delete` は `/profile` と同じ設定を使用します。
 
 ```
 /config permission command:<profile|show|list> mode:<owner|everyone|role> [role1] [role2] [role3]
@@ -180,19 +183,28 @@ python main.py
 
 | モード | 意味 |
 |--------|------|
-| `owner` | サーバーオーナーのみ実行可（**既定**） |
+| `owner` | サーバーオーナーのみ実行可 |
 | `everyone` | 全員実行可 |
 | `role` | 指定ロール（最大3つ）のいずれかを保持しているメンバーのみ実行可 |
+
+権限が**未設定**の場合の既定値:
+
+| 対象 | 既定値 |
+|------|--------|
+| `/profile`・`/profile_delete` | `everyone`（本人の登録・編集・削除） |
+| `/show`・`/list` | `owner` |
+
+`profile` の `everyone` / `role` で許可するのは本人操作です。他人の登録・編集・削除には、上記のコマンド権限に加えて**サーバーオーナーであることが必須**です。オーナーでも `role` 設定を自動的には回避できず、許可ロールが必要です。
 
 例:
 
 ```
 /config permission command:list mode:role role1:@運営
-/config permission command:profile mode:everyone   # 全員に自分のプロフィール登録を許可
+/config permission command:profile mode:everyone   # 全員に自分のプロフィール登録・編集・削除を許可
 /config permission command:show mode:owner
 ```
 
-> 💡 **既定はオーナーのみ** です。一般メンバーに `/profile` `/show` `/list` を使わせたい場合は上記のように `everyone` または `role` を明示的に設定してください。
+> 💡 **既存の明示設定は変更しません**。`profile` が明示的に `owner` のサーバーでは、一般メンバーは引き続き拒否されます。本人操作を全員に開放するには、サーバー管理権限を持つ管理者が `/config permission command:profile mode:everyone` を設定してください。`role` の許可ロールもそのまま維持されます。`/show`・`/list` を一般メンバーに許可する場合は、それぞれ `everyone` または `role` を設定してください。
 
 現在の設定確認:
 
@@ -319,7 +331,8 @@ python -m pytest -q
 |---------|------|
 | [tests/test_validators.py](tests/test_validators.py) | 日付・Twitter ID パース |
 | [tests/test_database.py](tests/test_database.py) | upsert / 検索 / 権限 / 一覧 |
-| [tests/test_permissions.py](tests/test_permissions.py) | owner / everyone / role 判定 |
+| [tests/test_permissions.py](tests/test_permissions.py) | コマンド別の既定値・owner / everyone / role 判定 |
+| [tests/test_profile_permissions.py](tests/test_profile_permissions.py) | 実コマンド経路での本人 / 代理の登録・編集・削除、Modal 保存時の権限再確認、設定表示 |
 | [tests/test_sort.py](tests/test_sort.py) | `/list` ソートキー |
 | [tests/test_anniversary.py](tests/test_anniversary.py) | 通知の対象抽出と配信回数 |
 
@@ -348,6 +361,9 @@ python -m pytest -q
 | 8 | `/config permission command:profile mode:owner` | オーナー以外で `/profile` が拒否される |
 | 9 | `/config show` | 現在の設定がすべて見える |
 | 10 | `/profile user:@他人`（オーナーで実行） | 代理登録できるモーダルタイトルに対象名が出る |
+| 10b | `profile` 未設定で一般メンバーが `/profile`・`/profile_delete` を実行（`user` 省略 / 自分を指定） | どちらも本人操作として許可される |
+| 10c | `profile` が `everyone` または許可ロールを持つ `role` で、非オーナーが他人を指定して登録・削除 | 拒否され、対象データは変更されない |
+| 10d | Modal 表示後に `profile` の権限を取り消して送信 | 本人のみに権限不足が案内され、保存されない |
 | 11 | `/config avatar source:twitter` 後に `/admin trigger` | 通知カード右上に X(Twitter) のアバター画像が表示される |
 | 12 | `/config avatar source:discord` 後に `/admin trigger` | 通知カード右上に Discord のアバター画像が表示される |
 | 13 | Twitter 未登録ユーザーで `source:twitter` で通知 | Discord アバターへフォールバックされる |

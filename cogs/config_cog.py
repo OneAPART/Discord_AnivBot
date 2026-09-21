@@ -11,9 +11,14 @@ from discord import app_commands
 from discord.ext import commands
 
 from db.database import Database
+from utils.permissions import default_permission_mode
 
 # 権限制御の対象となるコマンド一覧
 MANAGED_COMMANDS = ("profile", "show", "list")
+PROFILE_PERMISSION_NOTE = (
+    "`/profile_delete` は `/profile` と共通の設定です。"
+    "他のユーザーの登録・編集・削除はサーバーオーナーのみ可能です。"
+)
 
 
 class ConfigCog(commands.Cog):
@@ -69,7 +74,7 @@ class ConfigCog(commands.Cog):
         description="コマンドごとの実行権限を設定します。",
     )
     @app_commands.describe(
-        command="対象コマンド",
+        command="対象コマンド (profile は本人の登録・編集・削除。他人の操作はオーナーのみ)",
         mode="権限モード (owner/everyone/role)",
         role1="role モード時に許可するロール (1)",
         role2="role モード時に許可するロール (2)",
@@ -108,6 +113,8 @@ class ConfigCog(commands.Cog):
         else:
             roles = ", ".join(f"<@&{rid}>" for rid in role_ids)
             detail = f"次のロールが実行可: {roles}"
+        if command == "profile":
+            detail += f"\n{PROFILE_PERMISSION_NOTE}"
 
         await interaction.response.send_message(
             f":white_check_mark: `/{command}` の権限を **{mode}** に設定しました。\n{detail}",
@@ -226,7 +233,7 @@ class ConfigCog(commands.Cog):
         for cmd in MANAGED_COMMANDS:
             p = perm_map.get(cmd)
             if p is None:
-                lines.append(f"`/{cmd}` → **owner** (既定)")
+                lines.append(f"`/{cmd}` → **{default_permission_mode(cmd)}** (既定)")
                 continue
             if p.mode == "role":
                 roles = (
@@ -237,6 +244,7 @@ class ConfigCog(commands.Cog):
                 lines.append(f"`/{cmd}` → **role** ({roles})")
             else:
                 lines.append(f"`/{cmd}` → **{p.mode}**")
+        lines.append(PROFILE_PERMISSION_NOTE)
         embed.add_field(name="コマンド権限", value="\n".join(lines), inline=False)
 
         await interaction.response.send_message(embed=embed, ephemeral=True)

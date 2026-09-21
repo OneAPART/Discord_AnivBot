@@ -1,4 +1,4 @@
-"""/profile, /show, /list コマンド。"""
+"""/profile, /profile_delete, /show, /list コマンド。"""
 from __future__ import annotations
 
 from typing import Literal
@@ -9,7 +9,7 @@ from discord.ext import commands
 
 from db.database import Database, UserProfile
 from ui.modals import ProfileModal, TwitterLinkView
-from utils.permissions import require
+from utils.permissions import check_profile_target, require
 from utils.validators import twitter_url
 
 
@@ -26,8 +26,13 @@ class ProfileCog(commands.Cog):
     # ----------------------------------------------------------
     # /profile
     # ----------------------------------------------------------
-    @app_commands.command(name="profile", description="プロフィールを登録 / 編集します (サーバーごと)。")
-    @app_commands.describe(user="代理登録する対象ユーザー (省略時は自分)")
+    @app_commands.command(
+        name="profile",
+        description="このサーバーのプロフィールを登録 / 編集します (他人の代理操作はオーナーのみ)。",
+    )
+    @app_commands.describe(
+        user="登録・編集対象ユーザー (省略時は自分。他人の指定はサーバーオーナーのみ)"
+    )
     @app_commands.guild_only()
     @require("profile")
     async def profile(
@@ -37,6 +42,7 @@ class ProfileCog(commands.Cog):
     ):
         assert interaction.guild is not None
         target = user or interaction.user
+        check_profile_target(interaction, target.id)
         if target.bot:
             await interaction.response.send_message(
                 ":x: Bot のプロフィールは登録できません。", ephemeral=True
@@ -54,9 +60,11 @@ class ProfileCog(commands.Cog):
 
     @app_commands.command(
         name="profile_delete",
-        description="このサーバーからプロフィールを削除します。",
+        description="このサーバーからプロフィールを削除します (他人の削除はオーナーのみ)。",
     )
-    @app_commands.describe(user="削除対象ユーザー (省略時は自分)")
+    @app_commands.describe(
+        user="削除対象ユーザー (省略時は自分。他人の指定はサーバーオーナーのみ)"
+    )
     @app_commands.guild_only()
     @require("profile")
     async def profile_delete(
@@ -66,9 +74,10 @@ class ProfileCog(commands.Cog):
     ):
         assert interaction.guild is not None
         target = user or interaction.user
+        check_profile_target(interaction, target.id)
         deleted = await self.db.delete_profile(interaction.guild.id, target.id)
         if deleted:
-            if user is None:
+            if target.id == interaction.user.id:
                 msg = ":wastebasket: このサーバーのプロフィールを削除しました。"
             else:
                 msg = f":wastebasket: <@{target.id}> のプロフィールを削除しました。"
